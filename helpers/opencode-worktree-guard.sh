@@ -33,13 +33,13 @@ SESSION_NAME=""
 POSITIONAL=()
 
 usage() {
-  echo "Usage: $0 [--markdown <prompt.md>] [--session <name>]"
+  echo "Usage: $0 [--prompt <prompt.md>] [--session <name>]"
   echo "       $0 <prompt.md>"
   echo "       $0 <session-name>"
   echo "       $0 <session-name> <prompt.md>"
   echo
   echo "Options:"
-  echo "  -m, --markdown <path>   Markdown file used as initial prompt"
+  echo "  -p, --prompt <path>     Markdown file used as initial prompt"
   echo "  -s, --session <name>    Session name to create or resume"
   echo "  -h, --help              Show this help text"
   echo
@@ -52,7 +52,7 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -m|--markdown)
+    -p|--prompt)
       MARKDOWN_PATH="${2:-}"
       shift 2
       ;;
