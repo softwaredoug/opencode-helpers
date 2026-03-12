@@ -266,7 +266,8 @@ fi
 ############################################################
 
 install_pre_commit_wrapper() {
-  local hook_root="$WORKTREE_PATH/.git/hooks"
+  local hook_root
+  hook_root="$(git -C "$WORKTREE_PATH" rev-parse --git-path hooks)"
   local hook_dir="$hook_root/pre-commit.d"
   local hook_path="$hook_root/pre-commit"
   local legacy_hook="$hook_dir/legacy-pre-commit"
@@ -316,7 +317,9 @@ HOOK
 }
 
 install_allowed_directory_guard() {
-  local hook_dir="$WORKTREE_PATH/.git/hooks/pre-commit.d"
+  local hook_root
+  hook_root="$(git -C "$WORKTREE_PATH" rev-parse --git-path hooks)"
+  local hook_dir="$hook_root/pre-commit.d"
   local guard_path="$hook_dir/guard-allowed-directory"
 
   mkdir -p "$hook_dir"
@@ -327,15 +330,15 @@ set -euo pipefail
 
 ALLOWED_DIR="__ALLOWED_DIR__"
 
-mapfile -t STAGED_FILES < <(git diff --cached --name-only)
+STAGED_FILES="$(git diff --cached --name-only)"
 
-if [[ ${#STAGED_FILES[@]} -eq 0 ]]; then
+if [[ -z "$STAGED_FILES" ]]; then
   exit 0
 fi
 
 VIOLATIONS=()
 
-for f in "${STAGED_FILES[@]}"; do
+while IFS= read -r f; do
   f="${f#./}"
 
   case "$f" in
@@ -345,7 +348,7 @@ for f in "${STAGED_FILES[@]}"; do
       VIOLATIONS+=("$f")
       ;;
   esac
-done
+done <<< "$STAGED_FILES"
 
 if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
   echo
