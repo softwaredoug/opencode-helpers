@@ -37,6 +37,17 @@ usage() {
   echo "       $0 <prompt.md>"
   echo "       $0 <session-name>"
   echo "       $0 <session-name> <prompt.md>"
+  echo
+  echo "Options:"
+  echo "  -m, --markdown <path>   Markdown file used as initial prompt"
+  echo "  -s, --session <name>    Session name to create or resume"
+  echo "  -h, --help              Show this help text"
+  echo
+  echo "Behavior:"
+  echo "  - Markdown only: creates a new session named after the file"
+  echo "  - Session only: resumes the existing session worktree"
+  echo "  - Both: creates a new session with the given name"
+  echo "  - If both are provided and session exists, errors"
 }
 
 while [[ $# -gt 0 ]]; do
