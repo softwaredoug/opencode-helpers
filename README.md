@@ -26,6 +26,7 @@ Positional shorthands:
 - Both: creates a new session with the given name and markdown prompt.
 - If both are provided and the session already exists, the script exits with an error.
 - If allowed-directory is provided, a pre-commit guard blocks commits outside it.
+- If allowed-directory is provided, OpenCode edits are restricted to that directory.
 
 ## Options
 
@@ -60,3 +61,5 @@ Create a session with an allowed directory guard:
 ```bash
 ./helpers/opencode-worktree-guard.sh --prompt docs/todo.md --allowed-directory docs/
 ```
+
+Note: when `--allowed-directory` is set, the script writes `opencode.json` in the worktree and sets `permission.edit` to deny all paths except the allowed directory.

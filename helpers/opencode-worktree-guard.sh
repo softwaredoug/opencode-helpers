@@ -54,6 +54,7 @@ usage() {
   echo "  - Both: creates a new session with the given name"
   echo "  - If both are provided and session exists, errors"
   echo "  - If allowed-directory is provided, install a pre-commit guard"
+  echo "    and restrict OpenCode edits to that directory"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -369,6 +370,51 @@ HOOK
 if [[ -n "$ALLOWED_DIR" ]]; then
   install_pre_commit_wrapper
   install_allowed_directory_guard
+fi
+
+
+############################################################
+# Configure OpenCode permissions
+############################################################
+
+install_opencode_permissions() {
+  local config_path="$WORKTREE_PATH/opencode.json"
+
+  python - "$config_path" "$ALLOWED_DIR" <<'PY'
+import json
+import os
+import sys
+
+config_path = sys.argv[1]
+allowed_dir = sys.argv[2]
+allowed_pattern = f"{allowed_dir}**"
+
+data = {}
+if os.path.exists(config_path):
+    with open(config_path, "r", encoding="utf-8") as handle:
+        try:
+            data = json.load(handle)
+        except json.JSONDecodeError as exc:
+            print(f"Invalid JSON in {config_path}: {exc}")
+            sys.exit(1)
+
+permission = data.get("permission", {})
+if isinstance(permission, str):
+    permission = {"*": permission}
+if not isinstance(permission, dict):
+    permission = {}
+
+permission["edit"] = {"*": "deny", allowed_pattern: "allow"}
+data["permission"] = permission
+
+with open(config_path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2, ensure_ascii=True)
+    handle.write("\n")
+PY
+}
+
+if [[ -n "$ALLOWED_DIR" ]]; then
+  install_opencode_permissions
 fi
 
 
