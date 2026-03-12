@@ -28,7 +28,7 @@ cat > "$TMP_DIR/prompt.md" <<'EOF'
 Test prompt for guard
 EOF
 
-WORKTREE_BASE="$WORKTREE_BASE" OPENCODE_CMD=true "$REPO_ROOT/helpers/opencode-worktree-guard.sh" \
+WORKTREE_BASE="$WORKTREE_BASE" OPENCODE_CMD=true "$REPO_ROOT/helpers/owg" \
   --session guard-test \
   --prompt "$TMP_DIR/prompt.md" \
   --allowed-directory tests/

@@ -5,18 +5,45 @@ Create a git worktree per OpenCode session and launch OpenCode with a named sess
 ## Usage
 
 ```bash
-./helpers/opencode-worktree-guard.sh --prompt prompt.md
-./helpers/opencode-worktree-guard.sh --session my-session
-./helpers/opencode-worktree-guard.sh --session my-session --prompt prompt.md
-./helpers/opencode-worktree-guard.sh --prompt prompt.md --allowed-directory tests/
+./helpers/owg --prompt prompt.md
+./helpers/owg --session my-session
+./helpers/owg --session my-session --prompt prompt.md
+./helpers/owg --prompt prompt.md --allowed-directory tests/
+```
+
+## Install
+
+Install a symlink into `~/.local/bin`:
+
+```bash
+./scripts/install.sh
+```
+
+Uninstall:
+
+```bash
+./scripts/uninstall.sh
+```
+
+Makefile shortcuts:
+
+```bash
+make install
+make uninstall
+```
+
+You can override the install target:
+
+```bash
+make install BINDIR="$HOME/bin"
 ```
 
 Positional shorthands:
 
 ```bash
-./helpers/opencode-worktree-guard.sh prompt.md
-./helpers/opencode-worktree-guard.sh my-session
-./helpers/opencode-worktree-guard.sh my-session prompt.md
+./helpers/owg prompt.md
+./helpers/owg my-session
+./helpers/owg my-session prompt.md
 ```
 
 ## Behavior
@@ -47,19 +74,19 @@ Positional shorthands:
 Create a session from a prompt file:
 
 ```bash
-./helpers/opencode-worktree-guard.sh --prompt docs/todo.md
+./helpers/owg --prompt docs/todo.md
 ```
 
 Resume a session:
 
 ```bash
-./helpers/opencode-worktree-guard.sh --session docs-todo
+./helpers/owg --session docs-todo
 ```
 
 Create a session with an allowed directory guard:
 
 ```bash
-./helpers/opencode-worktree-guard.sh --prompt docs/todo.md --allowed-directory docs/
+./helpers/owg --prompt docs/todo.md --allowed-directory docs/
 ```
 
 Note: when `--allowed-directory` is set, the script writes `opencode.json` in the worktree and sets `permission.edit` to deny all paths except the allowed directory.

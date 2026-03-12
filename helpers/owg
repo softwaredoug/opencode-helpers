@@ -2,23 +2,23 @@
 set -euo pipefail
 
 ############################################################
-# opencode-worktree-guard.sh
+# owg
 #
 # Creates a git worktree per OpenCode session and launches
 # OpenCode with either a session name or a markdown prompt.
 #
 # Usage:
 #
-#   ./opencode-worktree-guard.sh --prompt prompt.md
-#   ./opencode-worktree-guard.sh --session my-session
-#   ./opencode-worktree-guard.sh --session my-session --prompt prompt.md
-#   ./opencode-worktree-guard.sh --prompt prompt.md --allowed-directory tests/
-#   ./opencode-worktree-guard.sh --session my-session --allowed-directory tests/
+#   ./helpers/owg --prompt prompt.md
+#   ./helpers/owg --session my-session
+#   ./helpers/owg --session my-session --prompt prompt.md
+#   ./helpers/owg --prompt prompt.md --allowed-directory tests/
+#   ./helpers/owg --session my-session --allowed-directory tests/
 #
 # Positional shorthands:
-#   ./opencode-worktree-guard.sh prompt.md
-#   ./opencode-worktree-guard.sh my-session
-#   ./opencode-worktree-guard.sh my-session prompt.md
+#   ./helpers/owg prompt.md
+#   ./helpers/owg my-session
+#   ./helpers/owg my-session prompt.md
 #
 # Optional environment variables:
 #
