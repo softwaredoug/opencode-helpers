@@ -8,6 +8,7 @@ Create a git worktree per OpenCode session and launch OpenCode with a named sess
 ./helpers/opencode-worktree-guard.sh --prompt prompt.md
 ./helpers/opencode-worktree-guard.sh --session my-session
 ./helpers/opencode-worktree-guard.sh --session my-session --prompt prompt.md
+./helpers/opencode-worktree-guard.sh --prompt prompt.md --allowed-directory tests/
 ```
 
 Positional shorthands:
@@ -24,11 +25,13 @@ Positional shorthands:
 - Session only: resumes the existing session worktree.
 - Both: creates a new session with the given name and markdown prompt.
 - If both are provided and the session already exists, the script exits with an error.
+- If allowed-directory is provided, a pre-commit guard blocks commits outside it.
 
 ## Options
 
 - `-p, --prompt <path>`: markdown file used as the initial prompt (must end with `.md` or `.markdown`).
 - `-s, --session <name>`: session name to create or resume.
+- `-a, --allowed-directory <path>`: only allow commits inside this directory and subdirectories.
 - `-h, --help`: show help text.
 
 ## Environment variables
@@ -50,4 +53,10 @@ Resume a session:
 
 ```bash
 ./helpers/opencode-worktree-guard.sh --session docs-todo
+```
+
+Create a session with an allowed directory guard:
+
+```bash
+./helpers/opencode-worktree-guard.sh --prompt docs/todo.md --allowed-directory docs/
 ```

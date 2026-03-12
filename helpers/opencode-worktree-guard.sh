@@ -9,9 +9,11 @@ set -euo pipefail
 #
 # Usage:
 #
-#   ./opencode-worktree-guard.sh --markdown prompt.md
+#   ./opencode-worktree-guard.sh --prompt prompt.md
 #   ./opencode-worktree-guard.sh --session my-session
-#   ./opencode-worktree-guard.sh --session my-session --markdown prompt.md
+#   ./opencode-worktree-guard.sh --session my-session --prompt prompt.md
+#   ./opencode-worktree-guard.sh --prompt prompt.md --allowed-directory tests/
+#   ./opencode-worktree-guard.sh --session my-session --allowed-directory tests/
 #
 # Positional shorthands:
 #   ./opencode-worktree-guard.sh prompt.md
@@ -30,10 +32,11 @@ set -euo pipefail
 
 MARKDOWN_PATH=""
 SESSION_NAME=""
+ALLOWED_DIR=""
 POSITIONAL=()
 
 usage() {
-  echo "Usage: $0 [--prompt <prompt.md>] [--session <name>]"
+  echo "Usage: $0 [--prompt <prompt.md>] [--session <name>] [--allowed-directory <path>]"
   echo "       $0 <prompt.md>"
   echo "       $0 <session-name>"
   echo "       $0 <session-name> <prompt.md>"
@@ -41,6 +44,8 @@ usage() {
   echo "Options:"
   echo "  -p, --prompt <path>     Markdown file used as initial prompt"
   echo "  -s, --session <name>    Session name to create or resume"
+  echo "  -a, --allowed-directory <path>"
+  echo "                          Directory allowed to be committed"
   echo "  -h, --help              Show this help text"
   echo
   echo "Behavior:"
@@ -48,6 +53,7 @@ usage() {
   echo "  - Session only: resumes the existing session worktree"
   echo "  - Both: creates a new session with the given name"
   echo "  - If both are provided and session exists, errors"
+  echo "  - If allowed-directory is provided, install a pre-commit guard"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -58,6 +64,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -s|--session)
       SESSION_NAME="${2:-}"
+      shift 2
+      ;;
+    -a|--allowed-directory)
+      ALLOWED_DIR="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -157,6 +167,29 @@ if [[ -z "$SESSION_NAME" ]]; then
   exit 1
 fi
 
+if [[ -n "$ALLOWED_DIR" ]]; then
+  if [[ "$ALLOWED_DIR" == /* ]]; then
+    if [[ "$ALLOWED_DIR" != "$REPO_ROOT/"* ]]; then
+      echo "Allowed directory must be inside the repo: $ALLOWED_DIR"
+      exit 1
+    fi
+    ALLOWED_DIR="${ALLOWED_DIR#"$REPO_ROOT"/}"
+  fi
+
+  ALLOWED_DIR="${ALLOWED_DIR#./}"
+  ALLOWED_DIR="${ALLOWED_DIR%/}/"
+
+  if [[ -z "$ALLOWED_DIR" ]]; then
+    echo "Allowed directory cannot be empty"
+    exit 1
+  fi
+
+  if [[ ! -d "$ALLOWED_DIR" ]]; then
+    echo "Directory does not exist: $ALLOWED_DIR"
+    exit 1
+  fi
+fi
+
 
 ############################################################
 # Configuration
@@ -228,6 +261,118 @@ fi
 
 
 ############################################################
+# Install pre-commit guard
+############################################################
+
+install_pre_commit_wrapper() {
+  local hook_root="$WORKTREE_PATH/.git/hooks"
+  local hook_dir="$hook_root/pre-commit.d"
+  local hook_path="$hook_root/pre-commit"
+  local legacy_hook="$hook_dir/legacy-pre-commit"
+  local wrapper_marker="opencode-worktree-guard wrapper"
+
+  mkdir -p "$hook_dir"
+
+  if [[ -f "$hook_path" && ! -L "$hook_path" ]]; then
+    if ! grep -q "$wrapper_marker" "$hook_path"; then
+      if [[ ! -f "$legacy_hook" ]]; then
+        mv "$hook_path" "$legacy_hook"
+        chmod +x "$legacy_hook"
+      else
+        local stamp
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        mv "$hook_path" "$hook_dir/legacy-pre-commit-$stamp"
+      fi
+    fi
+  fi
+
+  cat > "$hook_path" <<'HOOK'
+#!/usr/bin/env bash
+# opencode-worktree-guard wrapper
+set -euo pipefail
+
+HOOK_DIR="__HOOK_DIR__"
+LEGACY_HOOK="$HOOK_DIR/legacy-pre-commit"
+
+if [[ -x "$LEGACY_HOOK" ]]; then
+  "$LEGACY_HOOK"
+fi
+
+shopt -s nullglob
+for hook in "$HOOK_DIR"/*; do
+  if [[ "$hook" == "$LEGACY_HOOK" ]]; then
+    continue
+  fi
+  if [[ -x "$hook" ]]; then
+    "$hook"
+  fi
+done
+HOOK
+
+  sed -i.bak "s|__HOOK_DIR__|$hook_dir|" "$hook_path"
+  rm "$hook_path.bak"
+  chmod +x "$hook_path"
+}
+
+install_allowed_directory_guard() {
+  local hook_dir="$WORKTREE_PATH/.git/hooks/pre-commit.d"
+  local guard_path="$hook_dir/guard-allowed-directory"
+
+  mkdir -p "$hook_dir"
+
+  cat > "$guard_path" <<'HOOK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ALLOWED_DIR="__ALLOWED_DIR__"
+
+mapfile -t STAGED_FILES < <(git diff --cached --name-only)
+
+if [[ ${#STAGED_FILES[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+VIOLATIONS=()
+
+for f in "${STAGED_FILES[@]}"; do
+  f="${f#./}"
+
+  case "$f" in
+    "$ALLOWED_DIR"*)
+      ;;
+    *)
+      VIOLATIONS+=("$f")
+      ;;
+  esac
+done
+
+if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
+  echo
+  echo "Commit rejected."
+  echo "Only files under '$ALLOWED_DIR' may be modified."
+  echo
+
+  for v in "${VIOLATIONS[@]}"; do
+    echo "  $v"
+  done
+
+  echo
+  exit 1
+fi
+HOOK
+
+  sed -i.bak "s|__ALLOWED_DIR__|$ALLOWED_DIR|" "$guard_path"
+  rm "$guard_path.bak"
+  chmod +x "$guard_path"
+}
+
+if [[ -n "$ALLOWED_DIR" ]]; then
+  install_pre_commit_wrapper
+  install_allowed_directory_guard
+fi
+
+
+############################################################
 # Launch OpenCode session
 ############################################################
 
@@ -249,6 +394,9 @@ echo "Branch:        $BRANCH_NAME"
 echo "Worktree:      $WORKTREE_PATH"
 if [[ -n "$MARKDOWN_PATH" ]]; then
   echo "Markdown:      $MARKDOWN_PATH"
+fi
+if [[ -n "$ALLOWED_DIR" ]]; then
+  echo "Allowed dir:   $ALLOWED_DIR"
 fi
 echo
 echo "Starting OpenCode..."
