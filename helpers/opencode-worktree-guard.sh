@@ -4,31 +4,90 @@ set -euo pipefail
 ############################################################
 # opencode-worktree-guard.sh
 #
-# Creates a controlled git worktree for an AI coding agent
-# where commits are restricted to a specific directory.
-#
-# This is useful for:
-#   - test-improving agents
-#   - refactoring isolated modules
-#   - preventing reward hacking
+# Creates a git worktree per OpenCode session and launches
+# OpenCode with either a session name or a markdown prompt.
 #
 # Usage:
 #
-#   ./opencode-worktree-guard.sh tests/
+#   ./opencode-worktree-guard.sh --markdown prompt.md
+#   ./opencode-worktree-guard.sh --session my-session
+#   ./opencode-worktree-guard.sh --session my-session --markdown prompt.md
+#
+# Positional shorthands:
+#   ./opencode-worktree-guard.sh prompt.md
+#   ./opencode-worktree-guard.sh my-session
+#   ./opencode-worktree-guard.sh my-session prompt.md
 #
 # Optional environment variables:
 #
-#   BRANCH_PREFIX   prefix for new branches
-#   WORKTREE_BASE   directory where worktrees are created
-#   OPENCODE_CMD    command used to start opencode
+#   BRANCH_PREFIX         prefix for new branches
+#   WORKTREE_BASE         directory where worktrees are created
+#   OPENCODE_CMD          command used to start opencode
+#   OPENCODE_SESSION_FLAG flag used to set session name
 #
 ############################################################
 
 
-ALLOWED_DIR="${1:-}"
+MARKDOWN_PATH=""
+SESSION_NAME=""
+POSITIONAL=()
 
-if [[ -z "$ALLOWED_DIR" ]]; then
-  echo "Usage: $0 <allowed-directory>"
+usage() {
+  echo "Usage: $0 [--markdown <prompt.md>] [--session <name>]"
+  echo "       $0 <prompt.md>"
+  echo "       $0 <session-name>"
+  echo "       $0 <session-name> <prompt.md>"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -m|--markdown)
+      MARKDOWN_PATH="${2:-}"
+      shift 2
+      ;;
+    -s|--session)
+      SESSION_NAME="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      POSITIONAL+=("$@")
+      break
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$MARKDOWN_PATH" && -z "$SESSION_NAME" ]]; then
+  if [[ ${#POSITIONAL[@]} -eq 1 ]]; then
+    if [[ "${POSITIONAL[0]}" == *.md || "${POSITIONAL[0]}" == *.markdown ]]; then
+      MARKDOWN_PATH="${POSITIONAL[0]}"
+    else
+      SESSION_NAME="${POSITIONAL[0]}"
+    fi
+  elif [[ ${#POSITIONAL[@]} -eq 2 ]]; then
+    SESSION_NAME="${POSITIONAL[0]}"
+    MARKDOWN_PATH="${POSITIONAL[1]}"
+  elif [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+    usage
+    exit 1
+  fi
+else
+  if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+    usage
+    exit 1
+  fi
+fi
+
+if [[ -z "$MARKDOWN_PATH" && -z "$SESSION_NAME" ]]; then
+  usage
   exit 1
 fi
 
@@ -58,14 +117,32 @@ cd "$REPO_ROOT"
 
 
 ############################################################
-# Normalize the allowed directory path
+# Validate inputs
 ############################################################
 
-ALLOWED_DIR="${ALLOWED_DIR#./}"
-ALLOWED_DIR="${ALLOWED_DIR%/}/"
+if [[ -n "$MARKDOWN_PATH" ]]; then
+  if [[ ! -f "$MARKDOWN_PATH" ]]; then
+    echo "Markdown file not found: $MARKDOWN_PATH"
+    exit 1
+  fi
 
-if [[ ! -d "$ALLOWED_DIR" ]]; then
-  echo "Directory does not exist: $ALLOWED_DIR"
+  case "$MARKDOWN_PATH" in
+    *.md|*.markdown)
+      ;;
+    *)
+      echo "Markdown file must end with .md or .markdown"
+      exit 1
+      ;;
+  esac
+fi
+
+if [[ -z "$SESSION_NAME" && -n "$MARKDOWN_PATH" ]]; then
+  MARKDOWN_BASENAME="${MARKDOWN_PATH##*/}"
+  SESSION_NAME="${MARKDOWN_BASENAME%.*}"
+fi
+
+if [[ -z "$SESSION_NAME" ]]; then
+  echo "Session name could not be determined"
   exit 1
 fi
 
@@ -74,103 +151,94 @@ fi
 # Configuration
 ############################################################
 
-BRANCH_PREFIX="${BRANCH_PREFIX:-agent}"
+BRANCH_PREFIX="${BRANCH_PREFIX:-session}"
 WORKTREE_BASE="${WORKTREE_BASE:-$REPO_ROOT/.worktrees}"
 OPENCODE_CMD="${OPENCODE_CMD:-opencode}"
+OPENCODE_SESSION_FLAG="${OPENCODE_SESSION_FLAG:---session}"
 
-STAMP="$(date +%Y%m%d-%H%M%S)"
+SAFE_SESSION_NAME="$(echo "$SESSION_NAME" | tr '/ ' '--' | tr -cd '[:alnum:]_.-')"
 
-SAFE_NAME="$(echo "$ALLOWED_DIR" | tr '/ ' '--' | tr -cd '[:alnum:]_.-')"
-
-BRANCH_NAME="${BRANCH_PREFIX}/${SAFE_NAME}-${STAMP}"
-
-WORKTREE_PATH="${WORKTREE_BASE}/${SAFE_NAME}-${STAMP}"
-
-
-mkdir -p "$WORKTREE_BASE"
-
-
-############################################################
-# Create worktree
-############################################################
-
-echo "Creating git worktree..."
-
-git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH"
-
-
-############################################################
-# Install commit guard
-############################################################
-
-HOOK_PATH="$WORKTREE_PATH/.git/hooks/pre-commit"
-
-cat > "$HOOK_PATH" <<'HOOK'
-#!/usr/bin/env bash
-set -euo pipefail
-
-ALLOWED_DIR="__ALLOWED_DIR__"
-
-# Collect staged files
-mapfile -t STAGED_FILES < <(git diff --cached --name-only)
-
-if [[ ${#STAGED_FILES[@]} -eq 0 ]]; then
-  exit 0
-fi
-
-VIOLATIONS=()
-
-for f in "${STAGED_FILES[@]}"; do
-  f="${f#./}"
-
-  case "$f" in
-    "$ALLOWED_DIR"*)
-      ;;
-    *)
-      VIOLATIONS+=("$f")
-      ;;
-  esac
-done
-
-
-if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
-  echo
-  echo "Commit rejected."
-  echo "Only files under '$ALLOWED_DIR' may be modified."
-  echo
-
-  for v in "${VIOLATIONS[@]}"; do
-    echo "  $v"
-  done
-
-  echo
+if [[ -z "$SAFE_SESSION_NAME" ]]; then
+  echo "Session name must include at least one alphanumeric character"
   exit 1
 fi
 
-exit 0
-HOOK
+SESSION_ROOT="${WORKTREE_BASE}/sessions"
+WORKTREE_PATH="${SESSION_ROOT}/${SAFE_SESSION_NAME}"
+BRANCH_NAME="${BRANCH_PREFIX}/${SAFE_SESSION_NAME}"
+
+mkdir -p "$SESSION_ROOT"
 
 
-# Inject allowed directory into hook
-sed -i.bak "s|__ALLOWED_DIR__|$ALLOWED_DIR|" "$HOOK_PATH"
-rm "$HOOK_PATH.bak"
+############################################################
+# Ensure session/worktree state
+############################################################
 
-chmod +x "$HOOK_PATH"
+worktree_exists() {
+  local target="$1"
+  while IFS= read -r line; do
+    if [[ "$line" == worktree\ * ]]; then
+      local path="${line#worktree }"
+      if [[ "$path" == "$target" ]]; then
+        return 0
+      fi
+    fi
+  done < <(git worktree list --porcelain)
+  return 1
+}
+
+session_exists=false
+if worktree_exists "$WORKTREE_PATH"; then
+  session_exists=true
+elif [[ -e "$WORKTREE_PATH" ]]; then
+  echo "Worktree path exists but is not registered with git: $WORKTREE_PATH"
+  exit 1
+fi
+
+if [[ -n "$MARKDOWN_PATH" ]]; then
+  if [[ "$session_exists" == true ]]; then
+    echo "Session already exists: $SESSION_NAME"
+    exit 1
+  fi
+
+  if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+    echo "Branch already exists for session: $BRANCH_NAME"
+    exit 1
+  fi
+
+  echo "Creating git worktree for session..."
+  git worktree add -b "$BRANCH_NAME" "$WORKTREE_PATH"
+else
+  if [[ "$session_exists" != true ]]; then
+    echo "Session not found: $SESSION_NAME"
+    exit 1
+  fi
+fi
 
 
 ############################################################
 # Launch OpenCode session
 ############################################################
 
-PROMPT="You will be working on improving $ALLOWED_DIR per user instructions. You are only allowed to modify this directory."
+PROMPT=""
+if [[ -n "$MARKDOWN_PATH" ]]; then
+  PROMPT="$(<"$MARKDOWN_PATH")"
+fi
 
 echo
 echo "-----------------------------------------"
-echo "Worktree created"
+if [[ "$session_exists" == true && -z "$MARKDOWN_PATH" ]]; then
+  echo "Session resumed"
+else
+  echo "Session created"
+fi
 echo "-----------------------------------------"
+echo "Session:       $SESSION_NAME"
 echo "Branch:        $BRANCH_NAME"
 echo "Worktree:      $WORKTREE_PATH"
-echo "Allowed dir:   $ALLOWED_DIR"
+if [[ -n "$MARKDOWN_PATH" ]]; then
+  echo "Markdown:      $MARKDOWN_PATH"
+fi
 echo
 echo "Starting OpenCode..."
 echo "-----------------------------------------"
@@ -179,20 +247,27 @@ echo
 
 cd "$WORKTREE_PATH"
 
-if "$OPENCODE_CMD" "$PROMPT"; then
-  exit 0
+OPENCODE_ARGS=()
+if [[ -n "$SESSION_NAME" ]]; then
+  OPENCODE_ARGS+=("$OPENCODE_SESSION_FLAG" "$SESSION_NAME")
 fi
 
+if [[ -n "$PROMPT" ]]; then
+  if "$OPENCODE_CMD" "${OPENCODE_ARGS[@]}" "$PROMPT"; then
+    exit 0
+  fi
 
-############################################################
-# Fallback if opencode CLI does not support prompt argument
-############################################################
+  ############################################################
+  # Fallback if opencode CLI does not support prompt argument
+  ############################################################
 
-echo
-echo "OpenCode launched without initial prompt."
-echo "Paste the following instruction:"
-echo
-echo "$PROMPT"
-echo
-
-exec "$OPENCODE_CMD"
+  echo
+  echo "OpenCode launched without initial prompt."
+  echo "Paste the following instruction:"
+  echo
+  echo "$PROMPT"
+  echo
+  exec "$OPENCODE_CMD" "${OPENCODE_ARGS[@]}"
+else
+  exec "$OPENCODE_CMD" "${OPENCODE_ARGS[@]}"
+fi
